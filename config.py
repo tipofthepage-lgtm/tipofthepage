@@ -1,7 +1,7 @@
 import os
 
 # ── Flask ──────────────────────────────────────────────────────────────────
-SECRET_KEY = os.environ.get("TOTP_SECRET_KEY", "change-this-in-production")
+SECRET_KEY = os.environ.get("TOTP_SECRET_KEY", "this-will-be-my-super-secret-key-but-i-need-to-update-it-still")
 
 # ── Database ───────────────────────────────────────────────────────────────
 DB_PATH = os.environ.get("TOTP_DB_PATH", "./data/totp_quotes.db")

@@ -1,0 +1,8 @@
+# requirements.txt
+flask
+gunicorn
+os
+datetime
+sqlite3
+hashlib
+difflab
