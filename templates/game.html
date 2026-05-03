@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% if mode == 'daily' %}Daily Quote{% else %}Endless Mode{% endif %} — Tip of the Page</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header>
+  <h1>📖 Tip of the Page</h1>
+  <p>
+    {% if mode == 'daily' %}
+      Today's daily quote
+    {% elif genre_filter %}
+      Endless · <span style="color:var(--gold)">{{ genre_filter }}</span>
+    {% else %}
+      Endless mode
+    {% endif %}
+  </p>
+</header>
+
+<div class="card" id="game-card">
+  {% include "_game.html" %}
+</div>
+
+<div style="text-align:center; margin-top: 24px; display:flex; gap:24px; justify-content:center; flex-wrap:wrap;">
+  <a href="{{ url_for('index') }}" class="submit-link">← Change mode</a>
+  <a href="{{ url_for('submit_page') }}" class="submit-link">Know a great quote? Submit it →</a>
+</div>
+
+<script>
+  const GAME_MODE = "{{ mode }}";
+  const GENRE_FILTER = "{{ genre_filter or '' }}";
+</script>
+<script src="{{ url_for('static', filename='game.js') }}"></script>
+</body>
+</html>

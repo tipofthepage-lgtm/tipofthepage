@@ -1,0 +1,93 @@
+<!-- Book tracker -->
+<div class="book-tracker">
+  {% set clue_defs = [
+    ('❝', 'Quote'),
+    ('🏷', 'Genre'),
+    ('📅', 'Year'),
+    ('✍', 'Author'),
+    ('📖', 'Answer')
+  ] %}
+  {% for icon, label in clue_defs %}
+    {% set i = loop.index0 %}
+    {% if genre_mode and i == 1 %}
+      <div class="book-page revealed" title="{{ label }}">
+    {% elif i < clue_index %}
+      <div class="book-page revealed" title="{{ label }}">
+    {% elif i == clue_index %}
+      <div class="book-page active" title="{{ label }}">
+    {% else %}
+      <div class="book-page locked" title="{{ label }}">
+    {% endif %}
+        <div class="book-icon">{{ icon }}</div>
+        <div class="book-label">{{ label }}</div>
+      </div>
+  {% endfor %}
+</div>
+
+<!-- Genre badge (always visible in genre mode) -->
+{% if genre_mode %}
+<div class="genre-mode-banner">
+  <span class="clue-badge" style="color:var(--gold); border-color:var(--gold);">Genre Mode · {{ revealed_clues.genre }} · {{ max_guesses }} guesses</span>
+</div>
+{% endif %}
+
+<!-- Quote -->
+<div class="quote-section">
+  <span class="clue-badge">Clue 1 — Quote</span>
+  <p class="quote-text">{{ quote }}</p>
+</div>
+
+<!-- Revealed clues (auto-revealed on each wrong guess) -->
+{% if revealed_clues %}
+<div class="clues-revealed">
+  {% if 'genre' in revealed_clues and not genre_mode %}
+    <div class="clue-pill"><strong>Genre:</strong> {{ revealed_clues.genre }}</div>
+  {% endif %}
+  {% if 'year' in revealed_clues %}
+    <div class="clue-pill"><strong>Year:</strong> {{ revealed_clues.year }}</div>
+  {% endif %}
+  {% if 'author' in revealed_clues %}
+    <div class="clue-pill"><strong>Author:</strong> {{ revealed_clues.author }}</div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="divider">· · ·</div>
+
+<!-- Game Over -->
+{% if game_over %}
+  <div style="text-align:center; padding: 0 16px 8px;">
+    <p class="game-over-title {{ 'win' if game_over == 'win' else 'lose' }}">
+      {{ '🎉 Well Read!' if game_over == 'win' else '📚 Better luck next time!' }}
+    </p>
+    <p class="answer-reveal">
+      The book was<br>
+      <strong>"{{ title }}"</strong><br>
+      <span style="font-size:0.9rem;">by {{ author }}{% if year %}, {{ year }}{% endif %}</span>
+    </p>
+    <div class="game-over-actions">
+      {% if mode == 'endless' %}
+        <button class="btn btn-primary" id="next-quote-btn">Next Quote →</button>
+      {% endif %}
+      <button class="btn btn-secondary btn-play-again" id="play-again-btn">
+        {{ 'Try Again' if mode == 'daily' else 'Restart Endless' }}
+      </button>
+    </div>
+  </div>
+
+<!-- Active game -->
+{% else %}
+  <div class="input-section">
+    <span class="guess-label">Guess {{ guess_count + 1 }} of {{ max_guesses }} — What's the book title?</span>
+    <div class="input-row">
+      <input type="text" id="guess-input" placeholder="Type your answer…" autocomplete="off" />
+      <button class="btn btn-primary" id="submit-btn">Submit</button>
+    </div>
+    <div id="feedback"></div>
+    <div class="attempt-dots">
+      {% for i in range(max_guesses) %}
+        <div class="dot {% if i < guess_count %}used{% elif i == guess_count %}current{% endif %}"></div>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tip of the Page</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header>
+  <h1>📖 Tip of the Page</h1>
+  <p>Guess the book from the quote</p>
+</header>
+
+<div class="card mode-select-card">
+
+  <div class="mode-option">
+    <div class="mode-icon">📅</div>
+    <div class="mode-body">
+      <h2 class="mode-title">Daily Quote</h2>
+      <p class="mode-desc">One quote per day, the same for everyone. Come back tomorrow for a new one.</p>
+      <a href="{{ url_for('daily') }}" class="btn btn-primary">Play Today's Quote</a>
+    </div>
+  </div>
+
+  <div class="mode-divider">· · ·</div>
+
+  <div class="mode-option">
+    <div class="mode-icon">♾</div>
+    <div class="mode-body">
+      <h2 class="mode-title">Endless Mode</h2>
+      <p class="mode-desc">
+        Keep playing through the full library. Optionally filter by genre —
+        but if you do, you'll start with one fewer guess since the genre is already known.
+      </p>
+
+      <div class="genre-row">
+        <form action="{{ url_for('endless') }}" method="get" class="genre-form">
+          <select name="genre" class="genre-select">
+            <option value="">All genres</option>
+            {% for g in genres %}
+              <option value="{{ g }}">{{ g }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-primary">Play Endless</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div style="text-align:center; margin-top: 24px;">
+  <a href="{{ url_for('submit_page') }}" class="submit-link">Know a great quote? Submit it →</a>
+</div>
+
+</body>
+</html>

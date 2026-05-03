@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Submit a Quote — Tip of the Page</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<style>
+  .submit-card { max-width: 580px; margin: 0 auto; }
+  .submit-card .card { padding: 52px 52px 48px; text-align: center; }
+
+  .form-icon { font-size: 3rem; display: block; margin-bottom: 20px; }
+
+  .submit-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.8rem; font-weight: 700;
+    color: var(--ink); margin-bottom: 16px;
+  }
+
+  .submit-body {
+    font-size: 1rem; color: var(--ink-light);
+    font-style: italic; line-height: 1.8;
+    margin-bottom: 32px;
+  }
+
+  .form-btn {
+    display: inline-block;
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem; font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--paper);
+    background: var(--ink);
+    border: 2px solid var(--ink);
+    border-radius: 2px;
+    padding: 14px 36px;
+    text-decoration: none;
+    box-shadow: 4px 4px 0 var(--ink-light);
+    transition: all 0.15s;
+    margin-bottom: 20px;
+  }
+  .form-btn:hover {
+    background: var(--ink-light);
+    transform: translate(-1px, -1px);
+    box-shadow: 5px 5px 0 var(--ink-light);
+  }
+
+  .back-link {
+    display: block;
+    margin-top: 20px;
+    font-family: 'Lora', serif;
+    font-size: 0.9rem; font-style: italic;
+    color: var(--ink-faint);
+    text-decoration: none;
+    border-bottom: 1px dashed var(--ink-faint);
+    display: inline-block;
+    transition: color 0.2s;
+  }
+  .back-link:hover { color: var(--ink-light); border-bottom-color: var(--ink-light); }
+
+  .note {
+    margin-top: 28px;
+    font-size: 0.8rem; color: var(--ink-faint);
+    font-style: italic; line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>📖 Tip of the Page</h1>
+  <p>Submit a quote</p>
+</header>
+
+<div class="submit-card">
+  <div class="card">
+    <span class="form-icon">✍️</span>
+    <p class="submit-title">Know a stumper?</p>
+    <p class="submit-body">
+      If you've got a great quote that would leave readers scratching their heads,
+      we'd love to hear it. Fill in our short form with the quote, book title,
+      author, genre, and year — we review everything before it goes live.
+    </p>
+
+    {% if google_form_url == '#' %}
+      <p style="color: var(--red); font-style: italic; font-size: 0.9rem; margin-bottom: 20px;">
+        ⚠ The submission form isn't set up yet — check back soon!
+      </p>
+    {% endif %}
+
+    <a href="{{ google_form_url }}" target="_blank" rel="noopener"
+       class="form-btn" {% if google_form_url == '#' %}aria-disabled="true"{% endif %}>
+      Open Submission Form →
+    </a>
+
+    <p class="note">
+      Opens in a new tab. We review all submissions manually
+      before adding them to the game.
+    </p>
+
+    <br>
+    <a href="{{ url_for('index') }}" class="back-link">← Back to the game</a>
+  </div>
+</div>
+
+</body>
+</html>
