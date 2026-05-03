@@ -1,7 +1,6 @@
 # requirements.txt
 Flask
 gunicorn
-os
 datetime
 sqlite3
 hashlib
