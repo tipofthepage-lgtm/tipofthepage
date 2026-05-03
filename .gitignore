@@ -1,6 +1,8 @@
 # My files
 .env
 *.db
+*.db-shm
+*.db-wal
 
 # Python Stuff
 *.pyc
