@@ -1,7 +1,4 @@
 # requirements.txt
 Flask
 gunicorn
-datetime
-sqlite3
-hashlib
-difflab
+python-dotenv
