@@ -1,5 +1,11 @@
 # My files
-config.py
+.env
+*.db
+
+# Python Stuff
+*.pyc
+*.pyo
+*.pyd
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

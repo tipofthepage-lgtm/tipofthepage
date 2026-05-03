@@ -5,14 +5,16 @@ import hashlib
 from datetime import date
 import config
 
+# -- Env --------------------------------------------------------------------
+
 app = Flask(__name__)
 
-# ── Config ─────────────────────────────────────────────────────────────────
+# -- Config -----------------------------------------------------------------
 app.secret_key = config.SECRET_KEY
 DB_PATH        = config.DB_PATH
 
 
-# ── Database helpers ───────────────────────────────────────────────────────
+# -- Database helpers -------------------------------------------------------
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -109,7 +111,7 @@ def record_result(quote_id, mode, outcome, guess_count=None):
         app.logger.warning(f"Failed to record result: {e}")
 
 
-# ── Mode select ────────────────────────────────────────────────────────────
+# -- Mode select ------------------------------------------------------------
 
 @app.route("/")
 def index():
@@ -117,7 +119,7 @@ def index():
     return render_template("index.html", genres=genres)
 
 
-# ── Daily mode ─────────────────────────────────────────────────────────────
+# -- Daily mode -------------------------------------------------------------
 
 @app.route("/daily")
 def daily():
@@ -139,7 +141,7 @@ def daily():
     return render_template("game.html", **_state())
 
 
-# ── Endless mode ───────────────────────────────────────────────────────────
+# -- Endless mode -----------------------------------------------------------
 
 @app.route("/endless", methods=["GET"])
 def endless():
@@ -186,7 +188,7 @@ def next_quote():
     return jsonify(_state())
 
 
-# ── Shared game routes ─────────────────────────────────────────────────────
+# -- Shared game routes -----------------------------------------------------
 
 @app.route("/new-game", methods=["POST"])
 def new_game():
@@ -247,14 +249,14 @@ def render_state():
     return render_template("_game.html", **_state())
 
 
-# ── Submission route ───────────────────────────────────────────────────────
+# -- Submission route -------------------------------------------------------
 
 @app.route("/submit")
 def submit_page():
     return render_template("submit.html", google_form_url=config.GOOGLE_FORM_URL)
 
 
-# ── Game state helpers ─────────────────────────────────────────────────────
+# -- Game state helpers -----------------------------------------------------
 
 def _new_game():
     book = get_random_book()
@@ -320,7 +322,7 @@ def _state():
     }
 
 
-# ── Boot ───────────────────────────────────────────────────────────────────
+# -- Boot -------------------------------------------------------------------
 
 if __name__ == "__main__":
     import os
