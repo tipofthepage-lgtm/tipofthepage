@@ -1,94 +1,110 @@
-from flask import Flask, render_template, session, request, jsonify
+from flask import Flask, render_template, session, request, jsonify, redirect
 from difflib import SequenceMatcher
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import hashlib
 from datetime import date
 import config
 
-# -- Env --------------------------------------------------------------------
-
+# ── App --------------------------------------------------------------------
 app = Flask(__name__)
-
-# -- Config -----------------------------------------------------------------
 app.secret_key = config.SECRET_KEY
-DB_PATH        = config.DB_PATH
 
 
-# -- Database helpers -------------------------------------------------------
+# ── Database helpers -------------------------------------------------------
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(config.DATABASE_URL)
     return conn
+
+
+def get_cursor(conn):
+    """Return a cursor that returns dicts instead of tuples."""
+    return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
 
 def init_db():
     with get_db() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS quotes (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                title      TEXT NOT NULL,
-                author     TEXT NOT NULL,
-                year       INTEGER,
-                genre      TEXT NOT NULL,
-                quote      TEXT NOT NULL UNIQUE,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        with get_cursor(conn) as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS quotes (
+                    id         SERIAL PRIMARY KEY,
+                    title      TEXT NOT NULL,
+                    author     TEXT NOT NULL,
+                    year       INTEGER,
+                    genre      TEXT NOT NULL,
+                    quote      TEXT NOT NULL UNIQUE,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS results (
+                    id          SERIAL PRIMARY KEY,
+                    quote_id    INTEGER REFERENCES quotes(id),
+                    mode        TEXT NOT NULL,
+                    outcome     TEXT NOT NULL,
+                    guess_count INTEGER,
+                    played_at   TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
         conn.commit()
 
-# -- Fixing db problems -----------------------------------------------------
 init_db()
 
 
+# ── Query helpers ----------------------------------------------------------
+
 def get_daily_book():
-    """Pick a consistent quote for today by hashing the date against the quote IDs."""
+    """Pick a consistent quote for today by hashing the date against quote IDs."""
     with get_db() as conn:
-        ids = [r["id"] for r in conn.execute("SELECT id FROM quotes ORDER BY id").fetchall()]
-        if not ids:
-            return None
-        # Deterministic pick: hash today's date, index into the id list
-        day_hash  = int(hashlib.md5(str(date.today()).encode()).hexdigest(), 16)
-        chosen_id = ids[day_hash % len(ids)]
-        row = conn.execute(
-            "SELECT id, title, author, year, genre, quote FROM quotes WHERE id = ?",
-            (chosen_id,)
-        ).fetchone()
+        with get_cursor(conn) as cur:
+            cur.execute("SELECT id FROM quotes ORDER BY id")
+            ids = [r["id"] for r in cur.fetchall()]
+            if not ids:
+                return None
+            day_hash  = int(hashlib.md5(str(date.today()).encode()).hexdigest(), 16)
+            chosen_id = ids[day_hash % len(ids)]
+            cur.execute(
+                "SELECT id, title, author, year, genre, quote FROM quotes WHERE id = %s",
+                (chosen_id,)
+            )
+            row = cur.fetchone()
     return dict(row) if row else None
 
 
 def get_random_book(genre=None, exclude_ids=None):
-    """Return a random quote, optionally filtered by genre and excluding already-seen IDs."""
+    """Return a random quote, optionally filtered by genre and excluding seen IDs."""
     with get_db() as conn:
-        params = []
-        clauses = []
-        if genre:
-            clauses.append("genre = ?")
-            params.append(genre)
-        if exclude_ids:
-            placeholders = ",".join("?" * len(exclude_ids))
-            clauses.append(f"id NOT IN ({placeholders})")
-            params.extend(exclude_ids)
-        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-        row = conn.execute(
-            f"SELECT id, title, author, year, genre, quote FROM quotes {where} ORDER BY RANDOM() LIMIT 1",
-            params
-        ).fetchone()
+        with get_cursor(conn) as cur:
+            clauses = []
+            params  = []
+            if genre:
+                clauses.append("genre = %s")
+                params.append(genre)
+            if exclude_ids:
+                clauses.append("id != ALL(%s)")
+                params.append(exclude_ids)
+            where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+            cur.execute(
+                f"SELECT id, title, author, year, genre, quote FROM quotes {where} ORDER BY RANDOM() LIMIT 1",
+                params
+            )
+            row = cur.fetchone()
     return dict(row) if row else None
 
 
 def get_all_genres():
     with get_db() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT genre FROM quotes ORDER BY genre"
-        ).fetchall()
-    return [r["genre"] for r in rows]
+        with get_cursor(conn) as cur:
+            cur.execute("SELECT DISTINCT genre FROM quotes ORDER BY genre")
+            return [r["genre"] for r in cur.fetchall()]
 
 
 def get_all_live_quotes():
     with get_db() as conn:
-        return [r["quote"] for r in conn.execute("SELECT quote FROM quotes").fetchall()]
+        with get_cursor(conn) as cur:
+            cur.execute("SELECT quote FROM quotes")
+            return [r["quote"] for r in cur.fetchall()]
 
 
 def fuzzy_match(candidate, existing_quotes, threshold=0.82):
@@ -104,17 +120,18 @@ def fuzzy_match(candidate, existing_quotes, threshold=0.82):
 def record_result(quote_id, mode, outcome, guess_count=None):
     try:
         with get_db() as conn:
-            conn.execute(
-                """INSERT INTO results (quote_id, mode, outcome, guess_count)
-                   VALUES (?, ?, ?, ?)""",
-                (quote_id, mode, outcome, guess_count)
-            )
+            with get_cursor(conn) as cur:
+                cur.execute(
+                    """INSERT INTO results (quote_id, mode, outcome, guess_count)
+                       VALUES (%s, %s, %s, %s)""",
+                    (quote_id, mode, outcome, guess_count)
+                )
             conn.commit()
     except Exception as e:
         app.logger.warning(f"Failed to record result: {e}")
 
 
-# -- Mode select ------------------------------------------------------------
+# ── Mode select ------------------------------------------------------------
 
 @app.route("/")
 def index():
@@ -122,11 +139,10 @@ def index():
     return render_template("index.html", genres=genres)
 
 
-# -- Daily mode -------------------------------------------------------------
+# ── Daily mode -------------------------------------------------------------
 
 @app.route("/daily")
 def daily():
-    # Only start a new daily game if the date has changed or no daily game exists
     today = str(date.today())
     if session.get("mode") != "daily" or session.get("daily_date") != today:
         book = get_daily_book()
@@ -144,39 +160,37 @@ def daily():
     return render_template("game.html", **_state())
 
 
-# -- Endless mode -----------------------------------------------------------
+# ── Endless mode -----------------------------------------------------------
 
 @app.route("/endless", methods=["GET"])
 def endless():
-    genre = request.args.get("genre", "").strip() or None
+    genre      = request.args.get("genre", "").strip() or None
     genre_mode = genre is not None
-    book = get_random_book(genre=genre)
+    book       = get_random_book(genre=genre)
     if book is None:
         return render_template("empty.html", genre=genre)
-    session["book"]        = book
-    session["quote_id"]    = book["id"]
-    session["mode"]        = "endless"
-    session["genre_mode"]  = genre_mode
-    session["genre_filter"]= genre
-    session["daily_date"]  = None
-    session["clue_index"]  = 1 if genre_mode else 0   # genre already known = start one clue ahead
-    session["guess_count"] = 0
-    session["game_over"]   = None
-    session["seen_ids"]    = [book["id"]]
+    session["book"]         = book
+    session["quote_id"]     = book["id"]
+    session["mode"]         = "endless"
+    session["genre_mode"]   = genre_mode
+    session["genre_filter"] = genre
+    session["daily_date"]   = None
+    session["clue_index"]   = 1 if genre_mode else 0
+    session["guess_count"]  = 0
+    session["game_over"]    = None
+    session["seen_ids"]     = [book["id"]]
     return render_template("game.html", **_state())
 
 
 @app.route("/next-quote", methods=["POST"])
 def next_quote():
-    """Load the next quote in endless mode without resetting seen list."""
     if session.get("mode") != "endless":
         return jsonify({"error": "not in endless mode"}), 400
     genre      = session.get("genre_filter")
     seen_ids   = session.get("seen_ids", [])
-    book       = get_random_book(genre=genre, exclude_ids=seen_ids)
     genre_mode = session.get("genre_mode", False)
+    book       = get_random_book(genre=genre, exclude_ids=seen_ids)
     if book is None:
-        # Exhausted all quotes in this genre/pool — reset seen and pick fresh
         session["seen_ids"] = []
         book = get_random_book(genre=genre)
     if book is None:
@@ -191,18 +205,16 @@ def next_quote():
     return jsonify(_state())
 
 
-# -- Shared game routes -----------------------------------------------------
+# ── Shared game routes -----------------------------------------------------
 
 @app.route("/new-game", methods=["POST"])
 def new_game():
-    """Restart the current mode from scratch."""
     mode = session.get("mode", "daily")
     if mode == "daily":
         return daily()
     else:
         genre = session.get("genre_filter")
         url   = f"/endless?genre={genre}" if genre else "/endless"
-        from flask import redirect
         return redirect(url)
 
 
@@ -211,10 +223,10 @@ def guess():
     if session.get("game_over"):
         return jsonify(_state())
 
-    data       = request.get_json()
-    guess_text = (data.get("guess") or "").strip().lower()
-    book       = _current_book()
-    genre_mode = session.get("genre_mode", False)
+    data        = request.get_json()
+    guess_text  = (data.get("guess") or "").strip().lower()
+    book        = _current_book()
+    genre_mode  = session.get("genre_mode", False)
     max_guesses = 3 if genre_mode else 4
 
     if not guess_text:
@@ -226,15 +238,14 @@ def guess():
 
     if guess_text == book["title"].lower():
         session["game_over"] = "win"
-        record_result(session["quote_id"], session.get("mode","daily"), "win", guesses)
+        record_result(session["quote_id"], session.get("mode", "daily"), "win", guesses)
         return jsonify({**_state(), "feedback": "Correct! Well read!", "feedback_type": "correct"})
 
     if guesses >= max_guesses:
         session["game_over"] = "lose"
-        record_result(session["quote_id"], session.get("mode","daily"), "lose")
+        record_result(session["quote_id"], session.get("mode", "daily"), "lose")
         return jsonify({**_state(), "feedback": f'The answer was "{book["title"]}".', "feedback_type": "wrong"})
 
-    # Auto-advance clue, but never rewind past genre (index 1) in genre mode
     min_clue = 1 if genre_mode else 0
     if session.get("clue_index", min_clue) < (guesses + min_clue):
         session["clue_index"] = guesses + min_clue
@@ -246,35 +257,19 @@ def guess():
     })
 
 
-
 @app.route("/render-state", methods=["POST"])
 def render_state():
     return render_template("_game.html", **_state())
 
 
-# -- Submission route -------------------------------------------------------
+# ── Submission route -------------------------------------------------------
 
 @app.route("/submit")
 def submit_page():
     return render_template("submit.html", google_form_url=config.GOOGLE_FORM_URL)
 
 
-# -- Game state helpers -----------------------------------------------------
-
-def _new_game():
-    book = get_random_book()
-    if book is None:
-        book = {"id": 0, "title": "No quotes yet", "author": "—",
-                "year": 0, "genre": "—",
-                "quote": "The database is empty. Add some quotes first!"}
-    session["book"]        = book
-    session["quote_id"]    = book["id"]
-    session["mode"]        = "daily"
-    session["genre_mode"]  = False
-    session["clue_index"]  = 0
-    session["guess_count"] = 0
-    session["game_over"]   = None
-
+# ── Game state helpers -----------------------------------------------------
 
 def _current_book():
     return session.get("book", {
@@ -291,14 +286,13 @@ def _state():
     genre_mode  = session.get("genre_mode", False)
     max_guesses = 3 if genre_mode else 4
 
-    # In genre mode the genre pill is always visible from the start
     revealed_clues = {}
     if genre_mode:
         revealed_clues["genre"] = book["genre"]
     if clue_index >= 1 and not genre_mode:
-        revealed_clues["genre"]  = book["genre"]
+        revealed_clues["genre"] = book["genre"]
     if clue_index >= 2:
-        revealed_clues["year"]   = book["year"]
+        revealed_clues["year"]  = book["year"]
     if clue_index >= 3:
         revealed_clues["author"] = book["author"]
 
@@ -310,24 +304,23 @@ def _state():
         }
 
     return {
-        "quote":            book["quote"],
-        "clue_index":       clue_index,
-        "guess_count":      guess_count,
-        "max_guesses":      max_guesses,
-        "game_over":        game_over,
-        "revealed_clues":   revealed_clues,
-        "mode":             mode,
-        "genre_mode":       genre_mode,
-        "genre_filter":     session.get("genre_filter"),
-        "title":            book["title"]  if game_over else None,
-        "author":           book["author"] if game_over else None,
-        "year":             book["year"]   if game_over else None,
+        "quote":          book["quote"],
+        "clue_index":     clue_index,
+        "guess_count":    guess_count,
+        "max_guesses":    max_guesses,
+        "game_over":      game_over,
+        "revealed_clues": revealed_clues,
+        "mode":           mode,
+        "genre_mode":     genre_mode,
+        "genre_filter":   session.get("genre_filter"),
+        "title":          book["title"]  if game_over else None,
+        "author":         book["author"] if game_over else None,
+        "year":           book["year"]   if game_over else None,
     }
 
 
-# -- Boot -------------------------------------------------------------------
+# ── Boot ------------------------------------------------------------------
 
 if __name__ == "__main__":
     import os
-    app.run(host="0.0.0.0", port = int(os.environ.get("PORT", 5000)))
-    # app.run(debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

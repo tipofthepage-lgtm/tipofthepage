@@ -1,10 +1,11 @@
 import os
-
+ 
 # ── Flask ──────────────────────────────────────────────────────────────────
 SECRET_KEY = os.environ.get("TOTP_SECRET_KEY", "change-this-in-production")
-
+ 
 # ── Database ───────────────────────────────────────────────────────────────
-DB_PATH = os.environ.get("TOTP_DB_PATH", "./data/totp_quotes.db")
+# Railway automatically sets DATABASE_URL when you add a Postgres plugin
+DATABASE_URL = os.environ.get("DATABASE_URL", None)
 
 # ── Google Form ────────────────────────────────────────────────────────────
 # Paste your Google Form share URL here once you've created it.
