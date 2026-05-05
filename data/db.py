@@ -1,12 +1,15 @@
 """
 Tip of the Page — Quote Manager
-PyQt6 GUI for managing book quotes in the SQLite database.
+PyQt6 GUI for managing book quotes in the PostgreSQL database.
 Includes: Add Quote, Import Pending submissions.
 """
 
 import sys
-import sqlite3
+import os
+import psycopg2
+import psycopg2.extras
 from difflib import SequenceMatcher
+from dotenv import load_dotenv
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QTextEdit, QPushButton, QFrame, QScrollArea,
@@ -16,96 +19,125 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QColor
 
+load_dotenv()
+
 
 # ── Database ───────────────────────────────────────────────────────────────
 
-DB_PATH = "totp_quotes.db"
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    print("ERROR: DATABASE_URL not set. Check your .env file.")
+    sys.exit(1)
+
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(DATABASE_URL)
     return conn
+
+
+def get_cursor(conn):
+    return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
 
 def init_db():
     with get_db() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS quotes (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                title      TEXT NOT NULL,
-                author     TEXT NOT NULL,
-                year       INTEGER,
-                genre      TEXT NOT NULL,
-                quote      TEXT NOT NULL UNIQUE,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS pending_quotes (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                title           TEXT NOT NULL,
-                author          TEXT NOT NULL,
-                year            INTEGER,
-                genre           TEXT NOT NULL,
-                quote           TEXT NOT NULL,
-                submitter_email TEXT NOT NULL,
-                submitted_at    DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        with get_cursor(conn) as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS quotes (
+                    id         SERIAL PRIMARY KEY,
+                    title      TEXT NOT NULL,
+                    author     TEXT NOT NULL,
+                    year       INTEGER,
+                    genre      TEXT NOT NULL,
+                    quote      TEXT NOT NULL UNIQUE,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS pending_quotes (
+                    id              SERIAL PRIMARY KEY,
+                    title           TEXT NOT NULL,
+                    author          TEXT NOT NULL,
+                    year            INTEGER,
+                    genre           TEXT NOT NULL,
+                    quote           TEXT NOT NULL,
+                    submitter_email TEXT NOT NULL,
+                    submitted_at    TIMESTAMPTZ DEFAULT NOW()
+                )
+            """)
         conn.commit()
+
 
 def insert_quote(title, author, year, genre, quote):
     with get_db() as conn:
-        conn.execute(
-            "INSERT INTO quotes (title, author, year, genre, quote) VALUES (?, ?, ?, ?, ?)",
-            (title, author, year, genre, quote)
-        )
+        with get_cursor(conn) as cur:
+            cur.execute(
+                "INSERT INTO quotes (title, author, year, genre, quote) VALUES (%s, %s, %s, %s, %s)",
+                (title, author, year, genre, quote)
+            )
         conn.commit()
+
 
 def delete_pending(pending_id):
     with get_db() as conn:
-        conn.execute("DELETE FROM pending_quotes WHERE id = ?", (pending_id,))
+        with get_cursor(conn) as cur:
+            cur.execute("DELETE FROM pending_quotes WHERE id = %s", (pending_id,))
         conn.commit()
+
 
 def approve_pending(pending_id):
     """Move a pending quote into the live quotes table, then delete from pending."""
     with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM pending_quotes WHERE id = ?", (pending_id,)
-        ).fetchone()
-        if row is None:
-            raise ValueError("Pending quote not found.")
-        conn.execute(
-            "INSERT INTO quotes (title, author, year, genre, quote) VALUES (?, ?, ?, ?, ?)",
-            (row["title"], row["author"], row["year"], row["genre"], row["quote"])
-        )
-        conn.execute("DELETE FROM pending_quotes WHERE id = ?", (pending_id,))
+        with get_cursor(conn) as cur:
+            cur.execute("SELECT * FROM pending_quotes WHERE id = %s", (pending_id,))
+            row = cur.fetchone()
+            if row is None:
+                raise ValueError("Pending quote not found.")
+            cur.execute(
+                "INSERT INTO quotes (title, author, year, genre, quote) VALUES (%s, %s, %s, %s, %s)",
+                (row["title"], row["author"], row["year"], row["genre"], row["quote"])
+            )
+            cur.execute("DELETE FROM pending_quotes WHERE id = %s", (pending_id,))
         conn.commit()
     return dict(row)
 
+
 def get_pending_quotes():
     with get_db() as conn:
-        return conn.execute(
-            "SELECT * FROM pending_quotes ORDER BY submitted_at DESC"
-        ).fetchall()
+        with get_cursor(conn) as cur:
+            cur.execute("SELECT * FROM pending_quotes ORDER BY submitted_at DESC")
+            return cur.fetchall()
+
 
 def get_stats():
     with get_db() as conn:
-        total = conn.execute("SELECT COUNT(*) FROM quotes").fetchone()[0]
-        pending = conn.execute("SELECT COUNT(*) FROM pending_quotes").fetchone()[0]
-        genres = conn.execute(
-            "SELECT genre, COUNT(*) as cnt FROM quotes GROUP BY genre ORDER BY cnt DESC"
-        ).fetchall()
+        with get_cursor(conn) as cur:
+            cur.execute("SELECT COUNT(*) as count FROM quotes")
+            total = cur.fetchone()["count"]
+            cur.execute("SELECT COUNT(*) as count FROM pending_quotes")
+            pending = cur.fetchone()["count"]
+            cur.execute(
+                "SELECT genre, COUNT(*) as cnt FROM quotes GROUP BY genre ORDER BY cnt DESC"
+            )
+            genres = cur.fetchall()
     return total, pending, genres
+
 
 def get_all_quotes():
     with get_db() as conn:
-        return conn.execute("SELECT quote FROM quotes").fetchall()
+        with get_cursor(conn) as cur:
+            cur.execute("SELECT quote FROM quotes")
+            return cur.fetchall()
+
 
 def check_duplicate_exact(quote_text):
     with get_db() as conn:
-        return conn.execute(
-            "SELECT id FROM quotes WHERE LOWER(quote) = LOWER(?)", (quote_text,)
-        ).fetchone()
+        with get_cursor(conn) as cur:
+            cur.execute(
+                "SELECT id FROM quotes WHERE LOWER(quote) = LOWER(%s)", (quote_text,)
+            )
+            return cur.fetchone()
+
 
 def check_duplicate_fuzzy(quote_text, threshold=0.85):
     all_quotes = get_all_quotes()
@@ -316,8 +348,6 @@ class FeedbackBanner(QLabel):
 # ── Add Quote tab ──────────────────────────────────────────────────────────
 
 class AddQuoteTab(QWidget):
-    quote_added = None  # set by parent to refresh stats
-
     def __init__(self, on_added_callback, parent=None):
         super().__init__(parent)
         self.on_added = on_added_callback
@@ -509,7 +539,6 @@ class ImportPendingTab(QWidget):
         root.setContentsMargins(32, 24, 32, 24)
         root.setSpacing(16)
 
-        # Header row
         header_row = QHBoxLayout()
         title = QLabel("PENDING SUBMISSIONS")
         title.setObjectName("section_title")
@@ -526,7 +555,6 @@ class ImportPendingTab(QWidget):
         header_row.addWidget(refresh_btn)
         root.addLayout(header_row)
 
-        # Info text
         info = QLabel(
             "Review quotes submitted by users via the website. "
             "Approve to move them into the live database, or reject to discard."
@@ -535,7 +563,6 @@ class ImportPendingTab(QWidget):
         info.setStyleSheet(f"font-size:12px;color:{MUTED};font-style:italic;")
         root.addWidget(info)
 
-        # Table
         self.table = QTableWidget()
         self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels(["Title","Author","Year","Genre","Submitted","Email","Quote"])
@@ -550,11 +577,9 @@ class ImportPendingTab(QWidget):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(False)
         self.table.verticalHeader().setVisible(False)
-        self.table.setStyleSheet(self.table.styleSheet())
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         root.addWidget(self.table, stretch=1)
 
-        # Detail panel
         detail_frame = QFrame()
         detail_frame.setStyleSheet(f"background:{SURFACE};border:1px solid {BORDER};border-radius:2px;")
         detail_layout = QVBoxLayout(detail_frame)
@@ -571,7 +596,6 @@ class ImportPendingTab(QWidget):
         self.detail_text.setMinimumHeight(60)
         detail_layout.addWidget(self.detail_text)
 
-        # Dup warning in detail
         self.detail_dup = QLabel("")
         self.detail_dup.setWordWrap(True)
         self.detail_dup.setStyleSheet(f"font-size:11px;color:{AMBER};font-family:'Courier New',monospace;")
@@ -597,11 +621,10 @@ class ImportPendingTab(QWidget):
 
         root.addWidget(detail_frame)
 
-        # Feedback
         self.feedback = FeedbackBanner()
         root.addWidget(self.feedback)
 
-        self._pending_rows = []  # list of row dicts in table order
+        self._pending_rows = []
 
     def load_pending(self):
         rows = get_pending_quotes()
@@ -609,7 +632,9 @@ class ImportPendingTab(QWidget):
         self.table.setRowCount(len(self._pending_rows))
 
         for i, row in enumerate(self._pending_rows):
-            date_str = row["submitted_at"][:10] if row["submitted_at"] else "—"
+            # submitted_at is now a datetime object from psycopg2, not a string
+            submitted = row["submitted_at"]
+            date_str = submitted.strftime("%Y-%m-%d") if submitted else "—"
             vals = [
                 row["title"], row["author"],
                 str(row["year"]) if row["year"] else "—",
@@ -646,7 +671,6 @@ class ImportPendingTab(QWidget):
         self.approve_btn.setEnabled(True)
         self.reject_btn.setEnabled(True)
 
-        # Check for duplicates
         self.detail_dup.hide()
         quote = row["quote"]
         if check_duplicate_exact(quote):
@@ -722,7 +746,6 @@ class QuoteManager(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # ── Left: tabs ────────────────────────────────────────────────────
         left = QWidget()
         left.setStyleSheet(f"background:{DARK};")
         left.setMinimumWidth(580)
@@ -730,7 +753,6 @@ class QuoteManager(QMainWindow):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(0)
 
-        # App header
         header_widget = QWidget()
         header_widget.setStyleSheet(f"background:{DARK};")
         hw = QVBoxLayout(header_widget)
@@ -743,30 +765,22 @@ class QuoteManager(QMainWindow):
         hw.addWidget(title_lbl)
         hw.addWidget(sub_lbl)
         left_layout.addWidget(header_widget)
+        left_layout.addWidget(Divider())
 
-        divider = Divider()
-        left_layout.addWidget(divider)
-
-        # Tabs
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
-
         self.add_tab = AddQuoteTab(on_added_callback=self._on_quote_added)
         self.pending_tab = ImportPendingTab(on_changed_callback=self.refresh_stats)
-
         self.tabs.addTab(self.add_tab, "ADD QUOTE")
         self.tabs.addTab(self.pending_tab, "IMPORT PENDING")
-
         left_layout.addWidget(self.tabs, stretch=1)
         root.addWidget(left, stretch=6)
 
-        # ── Separator ─────────────────────────────────────────────────────
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.VLine)
         sep.setStyleSheet(f"color:{BORDER};background:{BORDER};border:none;max-width:1px;")
         root.addWidget(sep)
 
-        # ── Right: stats ──────────────────────────────────────────────────
         right = QWidget()
         right.setStyleSheet(f"background:{SURFACE};")
         right.setFixedWidth(300)
@@ -820,7 +834,6 @@ class QuoteManager(QMainWindow):
         self.last_added.setWordWrap(True)
         self.last_added.setStyleSheet(f"font-size:11px;color:{MUTED};font-family:'Georgia',serif;font-style:italic;")
         rl.addWidget(self.last_added)
-
         root.addWidget(right, stretch=0)
 
     def _on_quote_added(self, title, author, quote):
@@ -832,8 +845,6 @@ class QuoteManager(QMainWindow):
         total, pending, genres = get_stats()
         self.total_card.update_value(total)
         self.pending_card.update_value(pending)
-
-        # Update pending tab badge label
         self.tabs.setTabText(1, f"IMPORT PENDING ({pending})" if pending else "IMPORT PENDING")
 
         while self.genre_layout.count() > 1:

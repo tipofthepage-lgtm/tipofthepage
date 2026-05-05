@@ -10,7 +10,7 @@
 <body>
 
 <header>
-  <h1>📖 Tip of the Page</h1>
+  <h1>Tip of the Page</h1>
   <p>
     {% if mode == 'daily' %}
       Today's daily quote
@@ -28,7 +28,7 @@
 
 <div style="text-align:center; margin-top: 24px; display:flex; gap:24px; justify-content:center; flex-wrap:wrap;">
   <a href="{{ url_for('index') }}" class="submit-link">← Change mode</a>
-  <a href="{{ url_for('submit_page') }}" class="submit-link">Know a great quote? Submit it →</a>
+  <a href="{{ url_for('submit_page') }}" class="submit-link">Submit your favorite quotes here! →</a>
 </div>
 
 <script>
