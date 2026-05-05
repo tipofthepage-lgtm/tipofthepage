@@ -4,6 +4,7 @@
 *.db-shm
 *.db-wal
 *.docx
+TODO.MD
 
 # Python Stuff
 *.pyc
