@@ -330,3 +330,11 @@ input[type="number"]:focus { border-color: var(--gold); border-bottom-color: var
   flex-wrap: wrap;
   margin-top: 4px;
 }
+
+/* Ad Containter */
+.ad-container {
+  width: 100%;
+  max-width: 720px;
+  margin: 32px auto 0;
+  text-align: center;
+}
