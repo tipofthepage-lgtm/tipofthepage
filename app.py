@@ -6,12 +6,12 @@ import hashlib
 from datetime import date
 import config
 
-# ── App --------------------------------------------------------------------
+# -- App --------------------------------------------------------------------
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
 
 
-# ── Database helpers -------------------------------------------------------
+# -- Database helpers -------------------------------------------------------
 
 def get_db():
     conn = psycopg2.connect(config.DATABASE_URL)
@@ -52,7 +52,7 @@ def init_db():
 init_db()
 
 
-# ── Query helpers ----------------------------------------------------------
+# -- Query helpers ----------------------------------------------------------
 
 def get_daily_book():
     """Pick a consistent quote for today by hashing the date against quote IDs."""
@@ -131,7 +131,7 @@ def record_result(quote_id, mode, outcome, guess_count=None):
         app.logger.warning(f"Failed to record result: {e}")
 
 
-# ── Mode select ------------------------------------------------------------
+# -- Mode select ------------------------------------------------------------
 
 @app.route("/")
 def index():
@@ -139,7 +139,7 @@ def index():
     return render_template("index.html", genres=genres)
 
 
-# ── Daily mode -------------------------------------------------------------
+# -- Daily mode -------------------------------------------------------------
 
 @app.route("/daily")
 def daily():
@@ -160,7 +160,7 @@ def daily():
     return render_template("game.html", **_state())
 
 
-# ── Endless mode -----------------------------------------------------------
+# -- Endless mode -----------------------------------------------------------
 
 @app.route("/endless", methods=["GET"])
 def endless():
@@ -205,7 +205,7 @@ def next_quote():
     return jsonify(_state())
 
 
-# ── Shared game routes -----------------------------------------------------
+# -- Shared game routes -----------------------------------------------------
 
 @app.route("/new-game", methods=["POST"])
 def new_game():
@@ -262,14 +262,14 @@ def render_state():
     return render_template("_game.html", **_state())
 
 
-# ── Submission route -------------------------------------------------------
+# -- Submission route -------------------------------------------------------
 
 @app.route("/submit")
 def submit_page():
     return render_template("submit.html", google_form_url=config.GOOGLE_FORM_URL)
 
 
-# ── Game state helpers -----------------------------------------------------
+# -- Game state helpers -----------------------------------------------------
 
 def _current_book():
     return session.get("book", {
@@ -318,8 +318,14 @@ def _state():
         "year":           book["year"]   if game_over else None,
     }
 
+# -- Ads  ------------------------------------------------------------------
 
-# ── Boot ------------------------------------------------------------------
+@app.route("/ads.txt")
+def ads_txt():
+    return """google.com, pub-3804576949630595, DIRECT, f08c47fec0942fa0""", 200, {"Content-Type": "text/plain"}
+
+
+# -- Boot ------------------------------------------------------------------
 
 if __name__ == "__main__":
     import os
